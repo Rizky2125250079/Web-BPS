@@ -9,34 +9,45 @@
 <body class="bg-gray-50 text-gray-800 antialiased min-h-screen flex flex-col justify-between">
 
     <!-- Header / Navbar -->
-    <header class="bg-blue-900 text-white shadow-md">
+    <header class="bg-blue-900 text-white shadow-md sticky top-0 z-50">
         <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-            <a href="{{ route('home') }}" class="flex items-center space-x-3">
-                <div class="bg-blue-600 p-2 rounded-lg font-bold text-xl">BPS</div>
+            <a href="{{ route('home') }}" class="flex items-center space-x-3 group">
+                <div class="bg-blue-600 group-hover:bg-blue-500 p-2 rounded-lg font-bold text-xl transition">BPS</div>
                 <span class="font-bold text-lg tracking-wide">Portal Publikasi</span>
             </a>
-            <a href="{{ route('home') }}" class="text-sm bg-blue-800  px-4 py-2 rounded-lg transition">
-                &larr; Kembali ke Beranda
+            <a href="{{ route('home') }}" class="text-sm bg-blue-800 hover:bg-blue-700 px-4 py-2 rounded-lg transition flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                </svg>
+                Kembali ke Beranda
             </a>
         </div>
     </header>
 
     <!-- Main Content -->
-    <main class="max-w-5xl mx-auto px-4 py-10 flex-1">
-        @if($detail)
+    <main class="max-w-5xl mx-auto px-4 py-10 flex-1 w-full">
+        @if(!empty($detail))
             <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden p-6 md:p-8">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
 
                     <!-- Cover Image & Quick Info -->
                     <div class="flex flex-col items-center">
-                        <img src="{{ $detail['cover'] ?? 'https://via.placeholder.com/300x400' }}"
-                             alt="{{ $detail['title'] ?? 'Cover' }}"
-                             class="w-full max-w-[250px] rounded-lg shadow-md border object-cover">
+                        <img src="{{ !empty($detail['cover']) ? $detail['cover'] : 'https://placehold.co/300x400?text=Cover+Tidak+Tersedia' }}"
+                             alt="{{ $detail['title'] ?? 'Cover Publikasi' }}"
+                             class="w-full max-w-[250px] h-auto rounded-xl shadow-md border border-gray-200 object-cover aspect-[3/4]">
 
                         <div class="w-full mt-6 space-y-3 text-xs text-gray-600 bg-gray-50 p-4 rounded-xl border border-gray-100">
                             <div>
                                 <span class="font-semibold block text-gray-800">Tanggal Rilis:</span>
-                                {{ isset($detail['rls_date']) ? \Carbon\Carbon::parse($detail['rls_date'])->format('d F Y') : '-' }}
+                                {{ !empty($detail['rl_date']) ? \Carbon\Carbon::parse($detail['rl_date'])->locale('id')->translatedFormat('d F Y') : '-' }}
+                            </div>
+                            <div>
+                                <span class="font-semibold block text-gray-800">No. Katalog:</span>
+                                {{ $detail['kat_no'] ?? '-' }}
+                            </div>
+                            <div>
+                                <span class="font-semibold block text-gray-800">No. Publikasi:</span>
+                                {{ $detail['pub_no'] ?? '-' }}
                             </div>
                             <div>
                                 <span class="font-semibold block text-gray-800">ISSN / ISBN:</span>
@@ -57,6 +68,10 @@
                                 </svg>
                                 Unduh File PDF
                             </a>
+                        @else
+                            <div class="w-full mt-4 text-center bg-gray-100 text-gray-400 font-medium py-3 px-4 rounded-xl text-xs border border-gray-200">
+                                PDF Tidak Tersedia
+                            </div>
                         @endif
                     </div>
 
@@ -75,8 +90,12 @@
 
                         <div>
                             <h3 class="text-lg font-semibold text-gray-900 mb-2">Abstrak / Ringkasan</h3>
-                            <div class="text-gray-700 leading-relaxed text-sm whitespace-pre-line bg-gray-50 p-4 rounded-xl border border-gray-100">
-                                {!! nl2br(e($detail['abstract'] ?? 'Tidak ada abstrak untuk publikasi ini.')) !!}
+                            <div class="text-gray-700 leading-relaxed text-sm bg-gray-50 p-5 rounded-xl border border-gray-100">
+                                @if(!empty($detail['abstract']))
+                                    {!! nl2br(html_entity_decode($detail['abstract'])) !!}
+                                @else
+                                    <span class="italic text-gray-400">Tidak ada abstrak untuk publikasi ini.</span>
+                                @endif
                             </div>
                         </div>
                     </div>
@@ -84,10 +103,16 @@
                 </div>
             </div>
         @else
-            <div class="text-center py-20 bg-white rounded-xl border p-8">
-                <h2 class="text-xl font-bold text-gray-700">Detail Publikasi Tidak Ditemukan</h2>
-                <p class="text-gray-500 mt-2">Data gagal diambil dari BPS API atau ID publikasi tidak valid.</p>
-                <a href="{{ route('home') }}" class="inline-block mt-4 text-blue-600 hover:underline">Kembali ke beranda</a>
+            <!-- State jika data gagal dipanggil -->
+            <div class="text-center py-16 bg-white rounded-2xl border border-gray-200 p-8 shadow-sm max-w-xl mx-auto">
+                <svg class="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <h2 class="text-xl font-bold text-gray-800">Detail Publikasi Tidak Ditemukan</h2>
+                <p class="text-gray-500 mt-2 text-sm">Data gagal diambil dari BPS API atau ID publikasi tidak valid.</p>
+                <a href="{{ route('home') }}" class="inline-block mt-6 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium text-sm transition">
+                    Kembali ke Beranda
+                </a>
             </div>
         @endif
     </main>
