@@ -78,7 +78,7 @@
             </div>
 
             <!-- PAGINATION API BPS -->
-            @if(isset($totalPages) && $totalPages > 1)
+            @if(isset($totalPages))
                 <div class="mt-10 flex flex-col sm:flex-row items-center justify-between border-t border-gray-200 bg-white px-4 py-4 rounded-xl shadow-sm gap-4">
 
                     <!-- Info Halaman -->
@@ -108,7 +108,6 @@
 
                 </div>
             @endif
-
 
         </main>
     </div>

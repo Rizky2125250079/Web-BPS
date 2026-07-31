@@ -15,9 +15,9 @@ class PublicationController extends Controller
         $this->bpsApi = $bpsApi;
     }
 
-    // Menampilkan welcome.blade.php sebagai Halaman Utama / Index Publikasi
-    public function welcome(Request $request)
+ public function welcome(Request $request)
     {
+        // UI Anda dimulai dari halaman 1
         $page    = (int) $request->input('page', 1);
         $keyword = $request->input('search', '');
         $domain  = $request->input('domain', env('BPS_DOMAIN_DEFAULT', '0000'));
@@ -25,13 +25,28 @@ class PublicationController extends Controller
         // Ambil data dari API BPS via Service
         $apiData = $this->bpsApi->getPublications($domain, $page, $keyword);
 
-        // Ekstrak meta pagination & daftar publikasi
-        // Jika BpsApiService mengembalikan respon raw BPS API:
-        // - Indeks [0] berisi meta: 'page', 'pages', 'total', dll.
-        // - Indeks [1] berisi array publikasi
-        $currentPage     = (int) ($apiData['data'][0]['page'] ?? $page);
-        $totalPages      = (int) ($apiData['data'][0]['pages'] ?? 1);
-        $apiPublications = $apiData['data'][1] ?? $apiData; // Fallback jika service sudah mengembalikan data[1] langsung
+        // Nilai Default
+        $currentPage     = $page; // Gunakan request page agar konsisten dengan URL UI
+        $totalPages      = 1;
+        $apiPublications = [];
+
+        // Parsing berdasarkan struktur sukses dari API BPS
+        if (isset($apiData['status']) && $apiData['status'] === 'OK' && isset($apiData['data'])) {
+
+            // Index [0] berisi Meta Data (page, pages, per_page, dll)
+            if (isset($apiData['data'][0]['pages'])) {
+                $totalPages = (int) $apiData['data'][0]['pages'];
+            }
+
+            // Index [1] berisi Array Data Publikasi
+            if (isset($apiData['data'][1]) && is_array($apiData['data'][1])) {
+                $apiPublications = $apiData['data'][1];
+            }
+
+        } else {
+            // Fallback jika API gagal atau mengembalikan format yang berbeda
+            $apiPublications = is_array($apiData) ? $apiData : [];
+        }
 
         // Ambil data lokal buatan admin
         $localPublications = Publication::latest()->take(5)->get();
