@@ -34,5 +34,10 @@ return [
             'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
     ],
-
+        
+    'bps' => [
+        'base'   => env('BPS_API_BASE', 'https://webapi.bps.go.id/v1/'),
+        'key'    => env('BPS_API_KEY'),
+        'domain' => env('BPS_DOMAIN_DEFAULT', '0000'),
+    ],
 ];

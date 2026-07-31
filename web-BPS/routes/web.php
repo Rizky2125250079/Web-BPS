@@ -1,7 +1,10 @@
 <?php
-
+use App\Controllers\AdminController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return view('welcome');
-});
+use App\Http\Controllers\PublicationController;
+use App\Http\Controllers\AdminPublicationController;
+
+// Route Utama (Welcome -> Index Publikasi BPS)
+Route::get('/', [PublicationController::class, 'welcome'])->name('home');
+Route::get('/publikasi/{id}', [PublicationController::class, 'show'])->name('publications.show');
