@@ -25,7 +25,7 @@ class BpsApiService
     /**
      * Mengambil daftar publikasi menggunakan endpoint /list
      */
-    public function getPublications($domain = null, $page = 1, $keyword = '')
+    public function getPublications($domain = null, $page = 1, $keyword = '', $year = '')
     {
         $domain = $domain ?? $this->defaultDomain;
 
@@ -34,6 +34,10 @@ class BpsApiService
 
         if (!empty($keyword)) {
             $url .= "/keyword/" . urlencode($keyword);
+        }
+
+        if (!empty($year)) {
+            $url .= "/year/" . urlencode($year);
         }
 
         $response = Http::get($url);
@@ -67,17 +71,21 @@ class BpsApiService
      * @param  array<int,int>  $pages  nomor halaman yang mau diambil (mis. [2,3,4,...])
      * @return array<int,array>  peta [nomor_halaman => payload JSON halaman itu]
      */
-    private function fetchPagesInParallel(string $domain, string $keyword, array $pages): array
+    private function fetchPagesInParallel(string $domain, string $keyword, array $pages, string $year = ''): array
     {
         if (empty($pages)) {
             return [];
         }
 
-        $buildUrl = function (int $page) use ($domain, $keyword) {
+        $buildUrl = function (int $page) use ($domain, $keyword, $year) {
             $url = "{$this->baseUrl}/api/list/model/publication/lang/ind/domain/{$domain}/key/{$this->apiKey}/page/{$page}";
 
             if (!empty($keyword)) {
                 $url .= "/keyword/" . urlencode($keyword);
+            }
+
+            if (!empty($year)) {
+                $url .= "/year/" . urlencode($year);
             }
 
             return $url;
@@ -118,18 +126,18 @@ class BpsApiService
      * tidak kena "Maximum execution time exceeded" saat hasilnya tersebar
      * di banyak halaman.
      *
-     * Hasil di-cache per (domain, keyword) selama 30 menit supaya pencarian
+     * Hasil di-cache per (domain, keyword, year) selama 30 menit supaya pencarian
      * dengan kata kunci yang sama tidak menghajar API BPS berkali-kali.
      *
      * @return array<int,array> gabungan seluruh item publikasi dari semua halaman
      */
-    public function searchAllPublications(string $keyword, $domain = null, int $maxPages = 20): array
+    public function searchAllPublications(string $keyword, $domain = null, int $maxPages = 20, string $year = ''): array
     {
         $domain = $domain ?? $this->defaultDomain;
-        $cacheKey = 'bps_pub_search_' . $domain . '_' . md5(mb_strtolower(trim($keyword)));
+        $cacheKey = 'bps_pub_search_' . $domain . '_' . md5(mb_strtolower(trim($keyword))) . '_' . ($year ?: 'all');
 
-        return Cache::remember($cacheKey, now()->addMinutes(30), function () use ($domain, $keyword, $maxPages) {
-            $first = $this->getPublications($domain, 1, $keyword);
+        return Cache::remember($cacheKey, now()->addMinutes(30), function () use ($domain, $keyword, $maxPages, $year) {
+            $first = $this->getPublications($domain, 1, $keyword, $year);
 
             $items = [];
             if (isset($first['data'][1]) && is_array($first['data'][1])) {
@@ -140,7 +148,7 @@ class BpsApiService
             $lastPage   = min($totalPages, $maxPages);
 
             if ($lastPage >= 2) {
-                foreach ($this->fetchPagesInParallel($domain, $keyword, range(2, $lastPage)) as $json) {
+                foreach ($this->fetchPagesInParallel($domain, $keyword, range(2, $lastPage), $year) as $json) {
                     if (isset($json['data'][1]) && is_array($json['data'][1])) {
                         $items = array_merge($items, $json['data'][1]);
                     }
@@ -152,89 +160,6 @@ class BpsApiService
     }
 
     /**
-     * Mengambil seluruh tanggal rilis (rl_date) publikasi dengan memaginasi
-     * endpoint /list model=publication (endpoint yang sama dan sudah terbukti
-     * berfungsi di getPublications()).
-     *
-     * CATATAN: endpoint list model=publication milik WebAPI BPS TIDAK mendukung
-     * parameter "year" sebagai filter (berbeda dengan model=data). Percobaan
-     * sebelumnya (getPublicationCountByYear via /year/{tahun}) selalu
-     * mengembalikan total 0 sehingga grafik "Jumlah Publikasi per Tahun" di
-     * halaman utama selalu kosong. Solusinya: ambil semua data lewat paginasi
-     * biasa lalu hitung tahunnya sendiri dari rl_date.
-     *
-     * Sama seperti searchAllPublications(): halaman pertama diambil dulu untuk
-     * tahu total halaman, sisanya diambil PARALEL supaya tidak kena "Maximum
-     * execution time exceeded" — method ini jalan di SETIAP load halaman utama
-     * (bukan cuma saat search), jadi risikonya sama besar bahkan tanpa keyword.
-     *
-     * Hasil di-cache (bukan per tahun lagi, tapi satu cache untuk seluruh
-     * daftar tanggal) supaya tidak memaginasi ulang API BPS setiap kali
-     * halaman utama dibuka.
-     *
-     * @return array<int,string> daftar rl_date mentah, mis. ['2024-05-01', ...]
-     */
-    protected function getAllPublicationDates($domain = null, int $maxPages = 20): array
-    {
-        $domain = $domain ?? $this->defaultDomain;
-        $cacheKey = "bps_pub_all_dates_{$domain}";
-
-        return Cache::remember($cacheKey, now()->addHours(6), function () use ($domain, $maxPages) {
-            $dates = [];
-
-            $collectDates = function (?array $json) use (&$dates) {
-                if (isset($json['data'][1]) && is_array($json['data'][1])) {
-                    foreach ($json['data'][1] as $item) {
-                        if (!empty($item['rl_date'])) {
-                            $dates[] = $item['rl_date'];
-                        }
-                    }
-                }
-            };
-
-            $first = $this->getPublications($domain, 1, '');
-            $collectDates($first);
-
-            $totalPages = isset($first['data'][0]['pages']) ? (int) $first['data'][0]['pages'] : 1;
-            $lastPage   = min($totalPages, $maxPages);
-
-            if ($lastPage >= 2) {
-                foreach ($this->fetchPagesInParallel($domain, '', range(2, $lastPage)) as $json) {
-                    $collectDates($json);
-                }
-            }
-
-            return $dates;
-        });
-    }
-
-    /**
-     * Mengambil jumlah publikasi untuk rentang tahun (startYear..endYear),
-     * dipakai untuk grafik "jumlah publikasi per tahun" di halaman utama.
-     * Menghitung dari rl_date hasil getAllPublicationDates(), bukan dari
-     * parameter "year" pada API (lihat catatan di getAllPublicationDates()).
-     *
-     * @return array<int,int> [2020 => 12, 2021 => 15, ...]
-     */
-    public function getPublicationCountsByYearRange(int $startYear, int $endYear, $domain = null): array
-    {
-        $counts = [];
-        for ($year = $startYear; $year <= $endYear; $year++) {
-            $counts[$year] = 0;
-        }
-
-        foreach ($this->getAllPublicationDates($domain) as $rlDate) {
-            $year = (int) substr($rlDate, 0, 4);
-
-            if (isset($counts[$year])) {
-                $counts[$year]++;
-            }
-        }
-
-        return $counts;
-    }
-
-    /**
      * Mengambil detail publikasi menggunakan endpoint /view
      */
     public function getPublicationDetail($pubId, $domain = null)
@@ -243,6 +168,147 @@ class BpsApiService
 
         // Hasil URL: https://webapi.bps.go.id/v1/api/view/model/publication/lang/ind/domain/{domain}/id/{pubId}/key/{key}/
         $url = "{$this->baseUrl}/api/view/model/publication/lang/ind/domain/{$domain}/id/{$pubId}/key/{$this->apiKey}/";
+
+        $response = Http::get($url);
+
+        if ($response->successful() && isset($response->json()['data'])) {
+            return $response->json()['data'];
+        }
+
+        return null;
+    }
+
+    /**
+     * Mengambil daftar berita resmi statistik (press release) menggunakan
+     * endpoint /list model=pressrelease. Sama seperti getPublications(),
+     * hanya saja pressrelease juga mendukung filter bulan (month).
+     */
+    public function getPressReleases($domain = null, $page = 1, $keyword = '', $year = '', $month = '')
+    {
+        $domain = $domain ?? $this->defaultDomain;
+
+        // Hasil URL: https://webapi.bps.go.id/v1/api/list/model/pressrelease/lang/ind/domain/{domain}/key/{key}/page/{page}
+        $url = "{$this->baseUrl}/api/list/model/pressrelease/lang/ind/domain/{$domain}/key/{$this->apiKey}/page/{$page}";
+
+        if (!empty($keyword)) {
+            $url .= "/keyword/" . urlencode($keyword);
+        }
+
+        if (!empty($month)) {
+            $url .= "/month/" . urlencode($month);
+        }
+
+        if (!empty($year)) {
+            $url .= "/year/" . urlencode($year);
+        }
+
+        $response = Http::get($url);
+
+        // Sama seperti getPublications(): kembalikan payload apa adanya
+        // (data[0]=meta, data[1]=list) supaya PublicationController::welcome()
+        // bisa membaca $apiData['data'][0]['pages'] untuk pagination.
+        if ($response->successful()) {
+            return $response->json();
+        }
+
+        return [];
+    }
+
+    /**
+     * Versi paralel dari getPressReleases() untuk mengambil beberapa halaman
+     * sekaligus. Lihat catatan pada fetchPagesInParallel() (model=publication)
+     * untuk alasan lengkap kenapa ini perlu dijalankan paralel.
+     *
+     * @param  array<int,int>  $pages
+     * @return array<int,array>
+     */
+    private function fetchPressReleasePagesInParallel(string $domain, string $keyword, array $pages, string $year = '', string $month = ''): array
+    {
+        if (empty($pages)) {
+            return [];
+        }
+
+        $buildUrl = function (int $page) use ($domain, $keyword, $year, $month) {
+            $url = "{$this->baseUrl}/api/list/model/pressrelease/lang/ind/domain/{$domain}/key/{$this->apiKey}/page/{$page}";
+
+            if (!empty($keyword)) {
+                $url .= "/keyword/" . urlencode($keyword);
+            }
+
+            if (!empty($month)) {
+                $url .= "/month/" . urlencode($month);
+            }
+
+            if (!empty($year)) {
+                $url .= "/year/" . urlencode($year);
+            }
+
+            return $url;
+        };
+
+        $responses = Http::pool(function ($pool) use ($pages, $buildUrl) {
+            foreach ($pages as $page) {
+                $pool->as((string) $page)->timeout(10)->get($buildUrl($page));
+            }
+        });
+
+        $results = [];
+        foreach ($pages as $page) {
+            $response = $responses[(string) $page] ?? null;
+
+            if ($response instanceof Response && $response->successful()) {
+                $results[$page] = $response->json();
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * Mengambil SEMUA hasil pencarian press release untuk sebuah keyword
+     * (lintas halaman), sama seperti searchAllPublications() tapi untuk
+     * model=pressrelease. Hasil di-cache per (domain, keyword, year, month)
+     * selama 30 menit.
+     *
+     * @return array<int,array>
+     */
+    public function searchAllPressReleases(string $keyword, $domain = null, int $maxPages = 20, string $year = '', string $month = ''): array
+    {
+        $domain = $domain ?? $this->defaultDomain;
+        $cacheKey = 'bps_brs_search_' . $domain . '_' . md5(mb_strtolower(trim($keyword))) . '_' . ($year ?: 'all') . '_' . ($month ?: 'all');
+
+        return Cache::remember($cacheKey, now()->addMinutes(30), function () use ($domain, $keyword, $maxPages, $year, $month) {
+            $first = $this->getPressReleases($domain, 1, $keyword, $year, $month);
+
+            $items = [];
+            if (isset($first['data'][1]) && is_array($first['data'][1])) {
+                $items = $first['data'][1];
+            }
+
+            $totalPages = isset($first['data'][0]['pages']) ? (int) $first['data'][0]['pages'] : 1;
+            $lastPage   = min($totalPages, $maxPages);
+
+            if ($lastPage >= 2) {
+                foreach ($this->fetchPressReleasePagesInParallel($domain, $keyword, range(2, $lastPage), $year, $month) as $json) {
+                    if (isset($json['data'][1]) && is_array($json['data'][1])) {
+                        $items = array_merge($items, $json['data'][1]);
+                    }
+                }
+            }
+
+            return $items;
+        });
+    }
+
+    /**
+     * Mengambil detail press release menggunakan endpoint /view model=pressrelease
+     */
+    public function getPressReleaseDetail($brsId, $domain = null)
+    {
+        $domain = $domain ?? $this->defaultDomain;
+
+        // Hasil URL: https://webapi.bps.go.id/v1/api/view/model/pressrelease/lang/ind/domain/{domain}/id/{brsId}/key/{key}/
+        $url = "{$this->baseUrl}/api/view/model/pressrelease/lang/ind/domain/{$domain}/id/{$brsId}/key/{$this->apiKey}/";
 
         $response = Http::get($url);
 
