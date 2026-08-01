@@ -13,9 +13,9 @@
         <header class="bg-blue-900 text-white shadow-md sticky top-0 z-50">
             <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
                 <div class="flex items-center space-x-3">
-                    <span class="font-bold text-lg tracking-wide">Portal Publikasi BPS</span>
+                    <a href="{{ route('home') }}" class="font-bold text-lg tracking-wide hover:text-blue-200 transition">Portal Publikasi BPS</a>
                 </div>
-                <div>
+                <div class="flex items-center gap-3">
                     @if (Route::has('login'))
                         @auth
                             <a href="{{ url('/dashboard') }}" class="px-4 py-2 bg-blue-600 rounded-lg hover:bg-blue-700 text-sm font-semibold transition">Dashboard Admin</a>
@@ -41,9 +41,59 @@
             </div>
         </section>
 
+        <!-- Statistik Jumlah Publikasi per Tahun (disembunyikan saat sedang menampilkan hasil pencarian) -->
+        @if(empty($keyword))
+        <section id="statistik-tahunan" class="max-w-7xl mx-auto px-4 pt-12">
+            <h2 class="text-2xl font-bold mb-6 text-gray-900 border-b-2 border-blue-900 pb-2 inline-block">Statistik Jumlah Publikasi per Tahun</h2>
+
+            @php
+                $totalSemuaTahun = array_sum($yearlyCounts);
+                $tahunTerbanyak  = !empty($yearlyCounts) ? array_search(max($yearlyCounts), $yearlyCounts) : '-';
+            @endphp
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+                    <p class="text-xs text-gray-500 font-semibold uppercase">Total Publikasi</p>
+                    <p class="text-3xl font-extrabold text-blue-900 mt-1">{{ number_format($totalSemuaTahun, 0, ',', '.') }}</p>
+                    <p class="text-xs text-gray-400 mt-1">{{ $chartStartYear }} &ndash; {{ $chartEndYear }}</p>
+                </div>
+                <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+                    <p class="text-xs text-gray-500 font-semibold uppercase">Tahun Terbanyak</p>
+                    <p class="text-3xl font-extrabold text-emerald-600 mt-1">{{ $tahunTerbanyak }}</p>
+                    <p class="text-xs text-gray-400 mt-1">{{ number_format($yearlyCounts[$tahunTerbanyak] ?? 0, 0, ',', '.') }} publikasi</p>
+                </div>
+                <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+                    <p class="text-xs text-gray-500 font-semibold uppercase">Rata-rata per Tahun</p>
+                    <p class="text-3xl font-extrabold text-gray-900 mt-1">
+                        {{ count($yearlyCounts) ? number_format($totalSemuaTahun / count($yearlyCounts), 1, ',', '.') : 0 }}
+                    </p>
+                    <p class="text-xs text-gray-400 mt-1">{{ count($yearlyCounts) }} tahun ditampilkan</p>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
+                @if($totalSemuaTahun > 0)
+                    <canvas id="publikasiPerTahunChart" height="90"
+                        data-labels="{{ json_encode(array_map('strval', array_keys($yearlyCounts))) }}"
+                        data-values="{{ json_encode(array_values($yearlyCounts)) }}"></canvas>
+                @else
+                    <div class="text-center py-16 text-gray-500">
+                        Tidak ada data publikasi pada rentang tahun ini, atau API BPS sedang tidak dapat diakses.
+                    </div>
+                @endif
+            </div>
+        </section>
+        @endif
+
         <!-- Main Content -->
         <main class="max-w-7xl mx-auto px-4 py-12">
-            <h2 class="text-2xl font-bold mb-6 text-gray-900 border-b-2 border-blue-900 pb-2 inline-block">Publikasi Terkini</h2>
+            <h2 class="text-2xl font-bold mb-6 text-gray-900 border-b-2 border-blue-900 pb-2 inline-block">
+                @if(!empty($keyword))
+                    Hasil Pencarian: "{{ $keyword }}"
+                @else
+                    Publikasi Terkini
+                @endif
+            </h2>
 
             <!-- Grid Cards -->
             <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
@@ -78,7 +128,7 @@
             </div>
 
             <!-- PAGINATION API BPS -->
-            @if(isset($totalPages))
+            @if(isset($totalPages) && count($apiPublications) > 0)
                 <div class="mt-10 flex flex-col sm:flex-row items-center justify-between border-t border-gray-200 bg-white px-4 py-4 rounded-xl shadow-sm gap-4">
 
                     <!-- Info Halaman -->
@@ -116,6 +166,7 @@
     <footer class="bg-gray-800 text-gray-400 py-6 text-center text-xs mt-12">
         <p>&copy; {{ date('Y') }} Portal Publikasi BPS. Powered by BPS Web API.</p>
     </footer>
+
 
 </body>
 </html>
