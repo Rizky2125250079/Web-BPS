@@ -9,32 +9,7 @@
 <body class="bg-gray-50 text-gray-800 antialiased min-h-screen flex flex-col justify-between">
 
     <!-- Header / Navbar -->
-
-       <header class="bg-blue-900 text-white shadow-md sticky top-0 z-50">
-            <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-                <div class="flex items-center space-x-3">
-                    <a href="{{ route('home') }}" class="font-bold text-lg tracking-wide hover:text-blue-200 transition">Portal Publikasi BPS</a>
-                </div>
-                <div class="flex items-center space-x-3">
-
-                    <a href="{{ route('home') }}" class="text-sm hover:bg-blue-700 px-4 py-2 rounded-lg transition flex items-center gap-2">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
-                        </svg>
-                        Kembali ke Beranda
-                    </a>
-                </div>
-                <div class="flex items-center space-x-3">
-                    @if (Route::has('login'))
-                        @auth
-                            <a href="{{ url('/dashboard') }}" class="px-4 py-2 bg-blue-600 rounded-lg hover:bg-blue-700 text-sm font-semibold transition">Dashboard Admin</a>
-                        @else
-                            <a href="{{ route('login') }}" class="px-4 py-2 border border-blue-400 rounded-lg hover:bg-blue-800 text-sm font-semibold transition">Login Admin</a>
-                        @endauth
-                    @endif
-                </div>
-            </div>
-        </header>
+    @include('partials.navbar', ['backRoute' => route('home')])
 
     <!-- Main Content -->
     <main class="max-w-4xl mx-auto px-4 py-10 flex-1 w-full">

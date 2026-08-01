@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\BpsApiService;
-use App\Models\Publication;
+use App\Models\Announcement;
 use Illuminate\Http\Request;
 
 class PublicationController extends Controller
@@ -65,15 +65,15 @@ class PublicationController extends Controller
             fn ($pg, $yr) => $this->bpsApi->getPressReleases($domain, $pg, $keyword, $yr)
         );
 
-        $localPublications = Publication::latest()->take(5)->get();
 
-        // Daftar tahun untuk dropdown filter (10 tahun terakhir s.d. tahun berjalan).
-        // Dipakai bersama oleh kedua bagian (Publikasi & Press Release).
+        $announcements = Announcement::with('user')->latest()->get();
+
+
         $availableYears = range(now()->year, now()->year - 9);
 
         return view('welcome', compact(
             'apiPublications',
-            'localPublications',
+            'announcements',
             'keyword',
             'year',
             'availableYears',
@@ -98,20 +98,7 @@ class PublicationController extends Controller
         return view('pressreleases.show', compact('detail'));
     }
 
-    /**
-     * Logika bersama untuk membangun daftar item (Publikasi atau Press
-     * Release) beserta paginasinya:
-     *
-     * - Jika ada keyword: ambil SEMUA halaman lewat $searchAll (lintas
-     *   halaman API), urutkan berdasarkan relevansi judul, baru dipaginasi
-     *   secara lokal (lihat catatan lengkap di sortByTitleRelevance()).
-     * - Jika tidak ada keyword: browsing biasa, satu halaman langsung dari
-     *   API lewat $getList, hanya ditambah filter tahun jika dipilih user.
-     *
-     * @param  callable(string,string):array<int,array>  $searchAll  fn(keyword, year) -> semua item
-     * @param  callable(int,string):array  $getList  fn(page, year) -> payload mentah API BPS
-     * @return array{0: array<int,array>, 1: int, 2: int}  [items, currentPage, totalPages]
-     */
+
     private function buildListing(string $keyword, string $year, int $page, callable $searchAll, callable $getList): array
     {
         $currentPage = $page;
@@ -119,46 +106,23 @@ class PublicationController extends Controller
         $items       = [];
 
         if (!empty($keyword)) {
-            // PENTING: saat ada keyword, JANGAN ambil satu halaman API saja
-            // lalu di-sort di situ. Item yang judulnya paling cocok dengan
-            // keyword bisa saja berada di halaman manapun dari hasil API BPS
-            // (urutan asal API berdasarkan tanggal rilis, bukan relevansi
-            // judul) — kalau cuma menyortir satu halaman, item paling
-            // relevan bisa "terkubur" di halaman lain dan tidak pernah naik
-            // ke atas.
-            //
-            // $searchAll mengambil SEMUA halaman untuk keyword (dan tahun,
-            // jika dipilih) ini dan hasilnya di-cache 30 menit di
-            // BpsApiService, jadi request berikutnya dengan keyword dan
-            // tahun yang sama tidak menghajar API BPS lagi.
-            $allResults = $searchAll($keyword, $year);
 
-            // Urutkan SELURUH hasil (lintas halaman) berdasarkan relevansi judul.
+            $allResults = $searchAll($keyword, $year);
             $allResults = $this->sortByTitleRelevance($allResults, $keyword);
 
             $totalPages  = max(1, (int) ceil(count($allResults) / self::SEARCH_PER_PAGE));
             $currentPage = min(max(1, $page), $totalPages);
 
-            // Paginasi lokal dari hasil yang sudah terurut relevansinya.
+
             $items = array_slice(
                 $allResults,
                 ($currentPage - 1) * self::SEARCH_PER_PAGE,
                 self::SEARCH_PER_PAGE
             );
         } else {
-            // Tanpa keyword: perilaku browsing biasa (satu halaman langsung
-            // dari API, tanpa sorting relevansi karena tidak relevan tanpa
-            // keyword), hanya ditambah filter tahun jika dipilih user.
+
             $apiData = $getList($page, $year);
 
-            // Parsing struktur response API BPS.
-            // PENTING: jangan cek $apiData['status'] === 'OK' sebagai syarat, karena
-            // saat keyword pencarian tidak ditemukan API BPS membalas status "Error"
-            // padahal strukturnya (data[0]=meta, data[1]=list) tetap sama, cuma
-            // data[1] isinya array kosong. Kalau kita fallback ke "$apiData mentah"
-            // di sini, seluruh payload API (status, data-availability, data) akan
-            // ikut ter-render sebagai kartu palsu ("Judul Tidak Tersedia" -> link ke
-            // item yang tidak ada -> 404).
             if (isset($apiData['data'][0]['pages'])) {
                 $totalPages = max(1, (int) $apiData['data'][0]['pages']);
             }
@@ -171,16 +135,7 @@ class PublicationController extends Controller
         return [$items, $currentPage, $totalPages];
     }
 
-    /**
-     * Mengurutkan daftar item (seluruh hasil pencarian, lintas halaman API)
-     * agar yang judulnya paling cocok dengan keyword pencarian tampil paling
-     * atas. Urutan asal antar item dengan skor relevansi yang sama tetap
-     * dipertahankan (stable sort, dijamin sejak PHP 8.0). Dipakai bersama
-     * oleh Publikasi maupun Press Release karena keduanya sama-sama punya
-     * field 'title'.
-     *
-     * @param  array<int,array>  $items
-     */
+ 
     private function sortByTitleRelevance(array $items, string $keyword): array
     {
         usort($items, function ($a, $b) use ($keyword) {

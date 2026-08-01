@@ -10,22 +10,7 @@
 
     <div>
         <!-- Header / Navbar -->
-        <header class="bg-blue-900 text-white shadow-md sticky top-0 z-50">
-            <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-                <div class="flex items-center space-x-3">
-                    <a href="{{ route('home') }}" class="font-bold text-lg tracking-wide hover:text-blue-200 transition">Portal Publikasi BPS</a>
-                </div>
-                <div class="flex items-center gap-3">
-                    @if (Route::has('login'))
-                        @auth
-                            <a href="{{ url('/dashboard') }}" class="px-4 py-2 bg-blue-600 rounded-lg hover:bg-blue-700 text-sm font-semibold transition">Dashboard Admin</a>
-                        @else
-                            <a href="{{ route('login') }}" class="px-4 py-2 border border-blue-400 rounded-lg hover:bg-blue-800 text-sm font-semibold transition">Login Admin</a>
-                        @endauth
-                    @endif
-                </div>
-            </div>
-        </header>
+        @include('partials.navbar')
 
         <!-- Hero & Search Section (mencari Publikasi & Press Release sekaligus) -->
         <section class="bg-gradient-to-r from-blue-900 to-blue-700 text-white py-16 px-4">
@@ -48,6 +33,34 @@
 
         <!-- Main Content -->
         <main class="max-w-7xl mx-auto px-4 py-12 space-y-16">
+
+            <!-- ==================== SECTION: PENGUMUMAN ==================== -->
+            @if($announcements->isNotEmpty())
+                <section>
+                    <div class="flex items-center justify-between gap-3 mb-6 border-b-2 border-amber-500 pb-2">
+                        <h2 class="text-2xl font-bold text-gray-900">Pengumuman</h2>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                        @foreach($announcements as $announcement)
+                            <div class="bg-white rounded-xl shadow-sm hover:shadow-lg transition border border-amber-100 p-5 flex flex-col gap-3">
+                                <span class="inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-1 bg-amber-100 text-amber-800 rounded-full w-fit">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                                    </svg>
+                                    Pengumuman
+                                </span>
+                                <h3 class="font-bold text-gray-900 text-sm leading-snug">
+                                    {{ $announcement->title }}
+                                </h3>
+                                <p class="text-xs text-gray-500 mt-auto">
+                                    Oleh {{ $announcement->user->name ?? 'Admin' }}
+                                </p>
+                            </div>
+                        @endforeach
+                    </div>
+                </section>
+            @endif
 
             <!-- ==================== SECTION: PUBLIKASI ==================== -->
             <section>
