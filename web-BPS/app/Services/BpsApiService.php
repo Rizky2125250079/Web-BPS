@@ -3,6 +3,7 @@ namespace App\Services;
 
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Http\Client\Response;
 
 class BpsApiService
 {
@@ -49,6 +50,60 @@ class BpsApiService
     }
 
     /**
+     * Mengambil beberapa halaman endpoint /list model=publication SECARA
+     * PARALEL (bersamaan) memakai HTTP connection pool Laravel, bukan
+     * satu-satu berurutan.
+     *
+     * Kenapa perlu: sebelumnya paginasi dilakukan satu request per halaman,
+     * menunggu response selesai baru lanjut ke halaman berikutnya. Kalau
+     * hasilnya tersebar di puluhan halaman, waktu tunggu ikut menumpuk
+     * (mis. 40 halaman x 0.7 detik = 28 detik) dan gampang melebihi batas
+     * max_execution_time PHP -> fatal error "Maximum execution time of 30
+     * seconds exceeded". Dengan pool, semua halaman diminta bersamaan dan
+     * total waktu tunggu kira-kira sama dengan request PALING LAMBAT saja,
+     * bukan jumlah semuanya. Tiap request dibatasi timeout 10 detik supaya
+     * satu halaman yang lambat/macet tidak ikut menyeret seluruh pool.
+     *
+     * @param  array<int,int>  $pages  nomor halaman yang mau diambil (mis. [2,3,4,...])
+     * @return array<int,array>  peta [nomor_halaman => payload JSON halaman itu]
+     */
+    private function fetchPagesInParallel(string $domain, string $keyword, array $pages): array
+    {
+        if (empty($pages)) {
+            return [];
+        }
+
+        $buildUrl = function (int $page) use ($domain, $keyword) {
+            $url = "{$this->baseUrl}/api/list/model/publication/lang/ind/domain/{$domain}/key/{$this->apiKey}/page/{$page}";
+
+            if (!empty($keyword)) {
+                $url .= "/keyword/" . urlencode($keyword);
+            }
+
+            return $url;
+        };
+
+        $responses = Http::pool(function ($pool) use ($pages, $buildUrl) {
+            foreach ($pages as $page) {
+                $pool->as((string) $page)->timeout(10)->get($buildUrl($page));
+            }
+        });
+
+        $results = [];
+        foreach ($pages as $page) {
+            $response = $responses[(string) $page] ?? null;
+
+            // Http::pool() mengembalikan objek exception (bukan Response) untuk
+            // request yang gagal/timeout -> lewati saja, jangan sampai fatal error.
+            if ($response instanceof Response && $response->successful()) {
+                $results[$page] = $response->json();
+            }
+        }
+
+        return $results;
+    }
+
+    /**
      * Mengambil SEMUA hasil pencarian untuk sebuah keyword (bukan cuma satu
      * halaman) dengan memaginasi endpoint /list model=publication.
      *
@@ -58,36 +113,39 @@ class BpsApiService
      * satu halaman saja, publikasi paling relevan bisa "terkubur" di halaman
      * lain dan tidak pernah kelihatan naik ke atas.
      *
+     * Halaman pertama diambil dulu (untuk tahu total halaman), lalu sisa
+     * halaman (2..N) diambil PARALEL lewat fetchPagesInParallel() supaya
+     * tidak kena "Maximum execution time exceeded" saat hasilnya tersebar
+     * di banyak halaman.
+     *
      * Hasil di-cache per (domain, keyword) selama 30 menit supaya pencarian
      * dengan kata kunci yang sama tidak menghajar API BPS berkali-kali.
      *
      * @return array<int,array> gabungan seluruh item publikasi dari semua halaman
      */
-    public function searchAllPublications(string $keyword, $domain = null, int $maxPages = 50): array
+    public function searchAllPublications(string $keyword, $domain = null, int $maxPages = 20): array
     {
         $domain = $domain ?? $this->defaultDomain;
         $cacheKey = 'bps_pub_search_' . $domain . '_' . md5(mb_strtolower(trim($keyword)));
 
         return Cache::remember($cacheKey, now()->addMinutes(30), function () use ($domain, $keyword, $maxPages) {
+            $first = $this->getPublications($domain, 1, $keyword);
+
             $items = [];
-            $page = 1;
-            $totalPages = 1;
+            if (isset($first['data'][1]) && is_array($first['data'][1])) {
+                $items = $first['data'][1];
+            }
 
-            do {
-                $json = $this->getPublications($domain, $page, $keyword);
+            $totalPages = isset($first['data'][0]['pages']) ? (int) $first['data'][0]['pages'] : 1;
+            $lastPage   = min($totalPages, $maxPages);
 
-                if (!isset($json['data'][0]['pages'])) {
-                    break;
+            if ($lastPage >= 2) {
+                foreach ($this->fetchPagesInParallel($domain, $keyword, range(2, $lastPage)) as $json) {
+                    if (isset($json['data'][1]) && is_array($json['data'][1])) {
+                        $items = array_merge($items, $json['data'][1]);
+                    }
                 }
-
-                $totalPages = (int) $json['data'][0]['pages'];
-
-                if (isset($json['data'][1]) && is_array($json['data'][1])) {
-                    $items = array_merge($items, $json['data'][1]);
-                }
-
-                $page++;
-            } while ($page <= $totalPages && $page <= $maxPages);
+            }
 
             return $items;
         });
@@ -105,41 +163,26 @@ class BpsApiService
      * halaman utama selalu kosong. Solusinya: ambil semua data lewat paginasi
      * biasa lalu hitung tahunnya sendiri dari rl_date.
      *
+     * Sama seperti searchAllPublications(): halaman pertama diambil dulu untuk
+     * tahu total halaman, sisanya diambil PARALEL supaya tidak kena "Maximum
+     * execution time exceeded" — method ini jalan di SETIAP load halaman utama
+     * (bukan cuma saat search), jadi risikonya sama besar bahkan tanpa keyword.
+     *
      * Hasil di-cache (bukan per tahun lagi, tapi satu cache untuk seluruh
      * daftar tanggal) supaya tidak memaginasi ulang API BPS setiap kali
      * halaman utama dibuka.
      *
      * @return array<int,string> daftar rl_date mentah, mis. ['2024-05-01', ...]
      */
-    protected function getAllPublicationDates($domain = null, int $maxPages = 50): array
+    protected function getAllPublicationDates($domain = null, int $maxPages = 20): array
     {
         $domain = $domain ?? $this->defaultDomain;
         $cacheKey = "bps_pub_all_dates_{$domain}";
 
         return Cache::remember($cacheKey, now()->addHours(6), function () use ($domain, $maxPages) {
             $dates = [];
-            $page = 1;
-            $totalPages = 1;
 
-            do {
-                $url = "{$this->baseUrl}/api/list/model/publication/lang/ind/domain/{$domain}/page/{$page}/key/{$this->apiKey}";
-
-                $response = Http::get($url);
-
-                if (!$response->successful()) {
-                    break;
-                }
-
-                $json = $response->json();
-
-                if (!isset($json['status']) || $json['status'] !== 'OK') {
-                    break;
-                }
-
-                if (isset($json['data'][0]['pages'])) {
-                    $totalPages = (int) $json['data'][0]['pages'];
-                }
-
+            $collectDates = function (?array $json) use (&$dates) {
                 if (isset($json['data'][1]) && is_array($json['data'][1])) {
                     foreach ($json['data'][1] as $item) {
                         if (!empty($item['rl_date'])) {
@@ -147,9 +190,19 @@ class BpsApiService
                         }
                     }
                 }
+            };
 
-                $page++;
-            } while ($page <= $totalPages && $page <= $maxPages);
+            $first = $this->getPublications($domain, 1, '');
+            $collectDates($first);
+
+            $totalPages = isset($first['data'][0]['pages']) ? (int) $first['data'][0]['pages'] : 1;
+            $lastPage   = min($totalPages, $maxPages);
+
+            if ($lastPage >= 2) {
+                foreach ($this->fetchPagesInParallel($domain, '', range(2, $lastPage)) as $json) {
+                    $collectDates($json);
+                }
+            }
 
             return $dates;
         });
