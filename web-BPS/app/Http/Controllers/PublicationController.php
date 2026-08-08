@@ -15,32 +15,15 @@ class PublicationController extends Controller
         $this->bpsApi = $bpsApi;
     }
 
-    /**
-     * Jumlah item per halaman untuk hasil pencarian (paginasi lokal, lihat
-     * catatan pada blok "if (!empty($keyword))" di buildListing()).
-     */
     private const SEARCH_PER_PAGE = 10;
 
     public function welcome(Request $request)
     {
-        // PENTING: jangan andalkan default argumen kedua pada $request->input('x', default).
-        // Laravel secara bawaan memasang middleware ConvertEmptyStringsToNull yang mengubah
-        // SEMUA input string kosong ('') menjadi null SEBELUM sampai ke controller. Akibatnya,
-        // kalau field year/search dikirim kosong (mis. hidden input yang belum diisi), key-nya
-        // tetap ADA di request tapi nilainya null -> default '' pada input() tidak akan pernah
-        // dipakai (default hanya berlaku kalau key-nya sama sekali tidak ada), dan null tsb lolos
-        // ke buildListing() yang mensyaratkan tipe string -> TypeError. Makanya di sini semua
-        // nilai dibungkus dengan ?? supaya null (baik karena key tidak ada, maupun karena
-        // dikonversi middleware) selalu jatuh ke default yang benar.
+
         $domain = $request->input('domain') ?? env('BPS_DOMAIN_DEFAULT', '0000');
 
-        // Satu search bar dipakai bersama untuk mencari DUA bagian sekaligus
-        // (Publikasi & Press Release). Filter tahun tetap terpisah per
-        // bagian: year untuk Publikasi, year_brs untuk Press Release.
         $keyword = (string) ($request->input('search') ?? '');
 
-        // ==== Bagian Publikasi ====
-        // Query params: search (dipakai bersama), year, page
         $page = (int) ($request->input('page') ?? 1);
         $year = (string) ($request->input('year') ?? '');
 
@@ -52,8 +35,7 @@ class PublicationController extends Controller
             fn ($pg, $yr) => $this->bpsApi->getPublications($domain, $pg, $keyword, $yr)
         );
 
-        // ==== Bagian Press Release (Berita Resmi Statistik) ====
-        // Query params: search (dipakai bersama), year_brs, page_brs
+
         $pageBrs = (int) ($request->input('page_brs') ?? 1);
         $yearBrs = (string) ($request->input('year_brs') ?? '');
 
@@ -135,7 +117,7 @@ class PublicationController extends Controller
         return [$items, $currentPage, $totalPages];
     }
 
- 
+
     private function sortByTitleRelevance(array $items, string $keyword): array
     {
         usort($items, function ($a, $b) use ($keyword) {
@@ -146,15 +128,6 @@ class PublicationController extends Controller
         return $items;
     }
 
-    /**
-     * Skor relevansi judul terhadap keyword. Semakin kecil skor, semakin
-     * relevan (dipakai sebagai kunci sort ascending):
-     *   0 = judul sama persis dengan keyword
-     *   1 = judul diawali keyword
-     *   2 = keyword muncul sebagai kata utuh di judul
-     *   3 = keyword muncul sebagai bagian dari kata di judul
-     *   4 = keyword tidak ditemukan di judul (kemungkinan cocok di field lain)
-     */
     private function titleRelevanceScore(string $title, string $keyword): int
     {
         $title   = mb_strtolower(trim($title));
