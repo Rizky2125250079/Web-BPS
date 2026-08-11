@@ -15,7 +15,7 @@ class PublicationController extends Controller
         $this->bpsApi = $bpsApi;
     }
 
-    private const SEARCH_PER_PAGE = 15;
+    private const SEARCH_PER_PAGE = 100;
 
     public function welcome(Request $request)
     {

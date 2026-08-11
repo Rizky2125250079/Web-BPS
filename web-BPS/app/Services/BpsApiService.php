@@ -17,7 +17,7 @@ class BpsApiService
 
         $this->baseUrl = rtrim($rawBaseUrl, '/');
         $this->apiKey = config('services.bps.key', env('BPS_API_KEY'));
-        $this->defaultDomain = config('services.bps.domain', env('BPS_DOMAIN_DEFAULT', '0000'));
+        $this->defaultDomain = config('services.bps.domain', env('BPS_DOMAIN_DEFAULT', '1674'));
     }
 
 
