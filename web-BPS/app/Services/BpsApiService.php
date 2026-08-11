@@ -17,7 +17,7 @@ class BpsApiService
 
         $this->baseUrl = rtrim($rawBaseUrl, '/');
         $this->apiKey = config('services.bps.key', env('BPS_API_KEY'));
-        $this->defaultDomain = config('services.bps.domain', env('BPS_DOMAIN_DEFAULT', '1674'));
+        $this->defaultDomain = config('services.bps.domain', env('BPS_DOMAIN_DEFAULT', '0000'));
     }
 
 
@@ -84,7 +84,7 @@ class BpsApiService
         return $results;
     }
 
-    public function searchAllPublications(string $keyword, $domain = null, int $maxPages =29, string $year = ''): array
+    public function searchAllPublications(string $keyword, $domain = null, int $maxPages = 20, string $year = ''): array
     {
         $domain = $domain ?? $this->defaultDomain;
         $cacheKey = 'bps_pub_search_' . $domain . '_' . md5(mb_strtolower(trim($keyword))) . '_' . ($year ?: 'all');
@@ -200,7 +200,7 @@ class BpsApiService
     }
 
 
-    public function searchAllPressReleases(string $keyword, $domain = null, int $maxPages = 152, string $year = '', string $month = ''): array
+    public function searchAllPressReleases(string $keyword, $domain = null, int $maxPages = 20, string $year = '', string $month = ''): array
     {
         $domain = $domain ?? $this->defaultDomain;
         $cacheKey = 'bps_brs_search_' . $domain . '_' . md5(mb_strtolower(trim($keyword))) . '_' . ($year ?: 'all') . '_' . ($month ?: 'all');
